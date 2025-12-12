@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Nuba — AR & Bluetooth Translator (Prototype)</title>
+<style>
+  :root{
+    --bg:#071022; --card:#0f1724; --accent:#6d28d9; --muted:#9aa7b2; --text:#eaf4ff;
+  }
+  html,body{height:100%; margin:0; font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue"; background:linear-gradient(180deg,#020617 0%, #071022 100%); color:var(--text)}
+  .container{max-width:1200px;margin:18px auto;padding:18px}
+  header{display:flex;align-items:center;gap:12px}
+  h1{margin:0;font-size:20px}
+  .row{display:flex;gap:12px;margin-top:14px;align-items:flex-start}
+  .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:12px;padding:12px; box-shadow:0 6px 18px rgba(0,0,0,0.5)}
+  .left{flex:1; min-width:420px}
+  .right{width:360px}
+  label{display:block;font-size:13px;color:var(--muted);margin:6px 0}
+  input[type="text"], select{width:100%;padding:8px;border-radius:8px;background:#061024;border:1px solid #123;color:var(--text)}
+  button{background:var(--accent);color:white;border:none;padding:8px 12px;border-radius:10px;cursor:pointer}
+  .videoWrap{position:relative;border-radius:10px; overflow:hidden; background:#000}
+  video{width:100%; height:auto; display:block}
+  canvas#arOverlay{position:absolute; left:0; top:0; pointer-events:none}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .subtitleBox{background:rgba(0,0,0,0.6); padding:8px;border-radius:8px;color:#fff;margin-top:8px; min-height:48px}
+  .log{background:#020617;color:var(--muted);padding:8px;border-radius:8px;max-height:200px;overflow:auto;font-size:12px}
+  .agentBox{background:#041126;border-radius:10px;padding:10px}
+  .participant{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.01);margin-bottom:6px}
+  .small{font-size:13px;color:var(--muted)}
+  footer{margin-top:18px;font-size:13px;color:var(--muted)}
+  .pill{display:inline-block;padding:6px 8px;border-radius:999px;background:rgba(255,255,255,0.02);font-size:13px}
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Nuba — AR & Bluetooth Translator (Prototype)</h1>
+      <div class="small pill">Demo · Mock AI · Extendable</div>
+    </header>
+
+    <div class="row">
+      <div class="left card">
+        <h3>Live Call & AR Lens</h3>
+
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <label style="margin:0">اسمي:
+            <input id="username" type="text" value="طارق" />
+          </label>
+          <label style="width:220px;margin:0">دورك:
+            <select id="role">
+              <option value="host">Host</option>
+              <option value="guest">Guest</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="videoWrap" id="videoCard">
+          <video id="localVideo" autoplay muted playsinline></video>
+          <video id="remoteVideo" autoplay playsinline style="display:none"></video>
+          <canvas id="arOverlay"></canvas>
+        </div>
+
+        <div class="controls">
+          <button id="startCam">تشغيل الكاميرا</button>
+          <button id="createInvite">إنشاء رابط دعوة</button>
+          <button id="joinInvite">انضم بواسطة رابط</button>
+          <button id="startCall">ابدأ/انضم للمكالمة</button>
+          <button id="endCall" style="background:#b91c1c">انتهاء</button>
+          <button id="connectBT">اتصال سماعة بلوتوث (محاكاة)</button>
+          <button id="connectAR">اتصال نظارة AR (محاكاة)</button>
+        </div>
+
+        <label>Invite Token / Link</label>
+        <input id="inviteInput" type="text" placeholder="ضع التوكن أو رابط الدعوة هنا" />
+
+        <div class="subtitleBox" id="liveCaption">الترجمة الحية ستظهر هنا...</div>
+
+        <div style="display:flex;gap:12px;margin-top:10px">
+          <div style="flex:1">
+            <label class="small">مؤشرات جودة الشبكة</label>
+            <div class="log" id="networkLog">not started</div>
+          </div>
+          <div style="width:220px">
+            <label class="small">المشاركون</label>
+            <div id="participantsList" style="max-height:140px; overflow:auto"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="right card">
+        <h4>Agent مساعد الترجمة</h4>
+        <div class="agentBox">
+          <div class="small">Agent يقوم بتحليل الجمل ويقترح تصحيح الترجمة.</div>
+          <div style="margin-top:8px">
+            <label>النص الأصلي (اختياري)</label>
+            <input id="agentInput" type="text" placeholder="ضع نصًا ليحلله الوكيل" />
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button id="analyzeBtn">حلل & اقترح</button>
+              <button id="applyCorrection">تطبيق التصحيح للمشاركين</button>
+            </div>
+          </div>
+
+          <div style="margin-top:10px">
+            <label class="small">اقتراح الوكيل</label>
+            <div id="agentSuggestion" style="background:#020617;padding:8px;border-radius:8px;min-height:60px"></div>
+          </div>
+        </div>
+
+        <h4 style="margin-top:12px">Meeting Analysis</h4>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button id="exportSummary">تصدير ملخص (PDF)</button>
+          <button id="getActionItems">استخراج Action Items</button>
+        </div>
+        <div style="margin-top:8px" class="small">Summary / Actions</div>
+        <div id="summaryBox" class="log" style="height:120px"></div>
+
+        <h4 style="margin-top:12px">Developer Console</h4>
+        <div id="devLog" class="log"></div>
+      </div>
+    </div>
+
+    <footer>
+      ملاحظة: هذا نموذج تجريبي للواجهة أمام المستثمر / التطوير. لربط STT/TTS/LLM وحلول AR الحقيقية استبدل دوال الـ mock بمزودين (Whisper/Realtime, OpenAI/Gemini, ElevenLabs, ARCore/ARKit SDK).
+    </footer>
+  </div>
+
+<script>
+/*
+  Nuba prototype frontend (single-file)
+  - Simulates invite link creation (token = base64 JSON)
+  - Uses getUserMedia for local camera & audio
+  - Provides simple WebRTC signaling via BroadcastChannel (demo only) — replace with server signaling (WebSocket)
+  - Mock translation pipeline: STT mocked => translate() => display on AR overlay & live captions
+  - Agent: mock LLM correction suggestions
+  - Bluetooth / AR connections are simulated; show UI hooks where Web Bluetooth / AR SDK should be added
+  - Multi-participant is simulated via BroadcastChannel "nuba-room-{id}" to demonstrate messages between tabs
+*/
+
+/* ---------------------------
+   Utilities & Mock Adapters
+   --------------------------- */
+const log = (msg, elId='devLog') => {
+  const el = document.getElementById(elId);
+  el.innerText = (new Date()).toLocaleTimeString() + " — " + msg + "\n" + el.innerText;
+};
+
+function makeInviteToken(meta = {}) {
+  // Simple base64 JSON token (for demo). In prod use signed JWT.
+  return btoa(JSON.stringify({...meta, createdAt: Date.now()}));
+}
+function parseInviteToken(token) {
+  try { return JSON.parse(atob(token)); } catch(e){ return null; }
+}
+
+/* Mock translation pipeline
+   - In production: stream audio -> STT -> partial transcripts -> translate via LLM -> stream TTS audio to peers
+*/
+async function mockSttFromAudioSample(sampleText) {
+  // simulate STT latency
+  await new Promise(r=>setTimeout(r, 220));
+  return sampleText; // pass-through for demo
+}
+async function mockTranslate(text, targetLang='en') {
+  await new Promise(r=>setTimeout(r, 160)); // simulate latency
+  // fake translate: reverse words + tag (replace with real LLM)
+  const translated = text.split(' ').reverse().join(' ') + ` [${targetLang}]`;
+  return translated;
+}
+async function mockAgentAnalyze(text) {
+  await new Promise(r=>setTimeout(r, 180));
+  // simplistic correction suggestion
+  return `اقتراح تصحيح: "${text}" -> "${text.replace('مثال','نموذج')}"`;
+}
+
+/* ---------------------------
+   Signaling / Multi-tab demo (BroadcastChannel)
+   --------------------------- */
+// For prototype only: use BroadcastChannel to simulate signaling between tabs/windows.
+let bc = null;
+function initRoomChannel(roomId) {
+  if (!('BroadcastChannel' in window)) {
+    log('BroadcastChannel غير متوفر في المتصفح. استخدم تبويبتين في نفس المتصفح للعملية.');
+    return null;
+  }
+  bc = new BroadcastChannel('nuba-room-' + roomId);
+  bc.onmessage = (ev) => {
+    const m = ev.data;
+    if (m.type === 'peer-join') {
+      addParticipant(m.username, m.clientId);
+      log('Peer joined: ' + m.username);
+    } else if (m.type === 'translation') {
+      // show translated text
+      showLiveCaption(m.translated);
+      drawARText(m.translated);
+    } else if (m.type === 'action') {
+      document.getElementById('summaryBox').innerText = m.payload;
+    } else if (m.type === 'agent-suggestion') {
+      document.getElementById('agentSuggestion').innerText = m.payload;
+    }
+  };
+  return bc;
+}
+function broadcast(obj){
+  if(bc) bc.postMessage(obj);
+}
+
+/* ---------------------------
+   DOM elements
+   --------------------------- */
+const localVideo = document.getElementById('localVideo');
+const remoteVideo = document.getElementById('remoteVideo');
+const arCanvas = document.getElementById('arOverlay');
+const liveCaption = document.getElementById('liveCaption');
+const participantsList = document.getElementById('participantsList');
+const devLog = document.getElementById('devLog');
+
+/* ---------------------------
+   Camera & AR overlay
+   --------------------------- */
+let localStream = null;
+async function startCamera() {
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: true });
+    localVideo.srcObject = localStream;
+    // set canvas size
+    setTimeout(()=>resizeCanvas(), 300);
+    log('Camera started');
+  } catch (e) {
+    log('Camera error: ' + e.message);
+    alert('Please allow camera & mic to continue (run via https/http server).');
+  }
+}
+
+function resizeCanvas() {
+  const r = localVideo.getBoundingClientRect();
+  arCanvas.width = r.width;
+  arCanvas.height = r.height;
+  arCanvas.style.width = r.width + 'px';
+  arCanvas.style.height = r.height + 'px';
+  arCanvas.style.left = localVideo.offsetLeft + 'px';
+  arCanvas.style.top = localVideo.offsetTop + 'px';
+}
+
+/* AR draw */
+function drawARText(text) {
+  const ctx = arCanvas.getContext('2d');
+  // clear semi-translucent overlay for readability
+  ctx.clearRect(0,0,arCanvas.width,arCanvas.height);
+  // background bubble
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillRect(10, 10, arCanvas.width - 20, 70);
+  // text
+  ctx.fillStyle = "#fff";
+  ctx.font = "20px system-ui, Arial";
+  ctx.fillText(text, 24, 50);
+  // small label
+  ctx.fillStyle = "#9aa7b2";
+  ctx.font = "12px system-ui";
+  ctx.fillText("Nuba AR Lens · ترجمة فورية", 24, 68);
+}
+
+/* ---------------------------
+   Participants (simulated)
+   --------------------------- */
+const participants = {};
+function addParticipant(username, clientId) {
+  participants[clientId] = { username, clientId };
+  renderParticipants();
+}
+function renderParticipants() {
+  participantsList.innerHTML = '';
+  Object.values(participants).forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'participant';
+    div.innerHTML = `<div>${p.username}</div><div class="small">id:${p.clientId}</div>`;
+    participantsList.appendChild(div);
+  });
+}
+
+/* ---------------------------
+   Invite / Join handlers
+   --------------------------- */
+document.getElementById('createInvite').onclick = () => {
+  const token = makeInviteToken({ meetingId: 'meeting-' + Math.random().toString(36).slice(2,8), host: document.getElementById('username').value });
+  document.getElementById('inviteInput').value = token;
+  log('Invite created: ' + token);
+};
+
+document.getElementById('joinInvite').onclick = async () => {
+  const token = document.getElementById('inviteInput').value.trim();
+  const meta = parseInviteToken(token);
+  if(!meta){ alert('Token غير صالح'); return; }
+  // init BroadcastChannel room
+  initRoomChannel(meta.meetingId);
+  // announce presence
+  const clientId = 'c-' + Math.random().toString(36).slice(2,8);
+  broadcast({ type:'peer-join', username: document.getElementById('username').value, clientId });
+  addParticipant(document.getElementById('username').value, clientId);
+  log('Joined room ' + meta.meetingId + ' as ' + clientId);
+};
+
+/* ---------------------------
+   Simulated call flow & translation pipeline
+   --------------------------- */
+let translating = false;
+document.getElementById('startCall').onclick = async () => {
+  if(!localStream){ await startCamera(); }
+  const token = document.getElementById('inviteInput').value.trim();
+  const meta = parseInviteToken(token);
+  if(!meta){ alert('Please create or paste an invite token first'); return; }
+  // (demo) start a loop that "captures" phrases from local user and broadcasts translations
+  translating = true;
+  const samples = [
+    'مرحبا هذا اختبار ترجمة مباشر',
+    'نوبا يترجم المكالمة الآن',
+    'هذا مثال لتجربة سماعات بلوتوث',
+    'نقوم بعمل تحليل للاجتماع لاحقاً'
+  ];
+  let idx = 0;
+  log('Call started — streaming mock audio -> STT -> Translate -> Broadcast');
+  while(translating){
+    const sample = samples[idx % samples.length];
+    const text = await mockSttFromAudioSample(sample);
+    const translated = await mockTranslate(text, 'en');
+    // display locally
+    liveCaption.innerText = translated;
+    drawARText(translated);
+    // broadcast to peers (simulated)
+    broadcast({ type:'translation', translated, from: document.getElementById('username').value });
+    // store to summary buffer
+    addToSummaryLog(text, translated);
+    await new Promise(r=>setTimeout(r, 2200)); // interval between chunks
+    idx++;
+  }
+};
+
+document.getElementById('endCall').onclick = () => {
+  translating = false;
+  liveCaption.innerText = 'Call ended';
+  drawARText(''); // clear
+  log('Call ended');
+};
+
+/* ---------------------------
+   Bluetooth & AR connectors (simulation)
+   --------------------------- */
+document.getElementById('connectBT').onclick = async () => {
+  // Real implementation: use navigator.bluetooth.requestDevice({...}) and GATT services
+  // For demo we simulate a successful connection
+  log('Attempting Bluetooth headset connect (simulated)...');
+  await new Promise(r=>setTimeout(r, 600));
+  log('Bluetooth headset connected (simulated) — audio routing should be set to headset.');
+  alert('Bluetooth simulated: connected. For real devices implement Web Bluetooth GATT calls.');
+};
+
+document.getElementById('connectAR').onclick = async () => {
+  log('Attempting AR glasses connection (simulated)...');
+  await new Promise(r=>setTimeout(r, 600));
+  log('AR glasses connected (simulated). AR overlay will be shown on camera feed.');
+  alert('AR simulated: overlay active. To integrate real AR use ARWebXR / ARCore / ARKit SDK.');
+};
+
+/* ---------------------------
+   Agent: analyze & correction
+   --------------------------- */
+document.getElementById('analyzeBtn').onclick = async () => {
+  const txt = document.getElementById('agentInput').value.trim();
+  if(!txt){ alert('ضع نصًا لتحليله'); return; }
+  document.getElementById('agentSuggestion').innerText = 'جارٍ التحليل...';
+  const suggestion = await mockAgentAnalyze(txt);
+  document.getElementById('agentSuggestion').innerText = suggestion;
+  // broadcast suggestion to peers
+  broadcast({ type:'agent-suggestion', payload: suggestion });
+  log('Agent suggestion ready');
+};
+
+document.getElementById('applyCorrection').onclick = () => {
+  const sug = document.getElementById('agentSuggestion').innerText;
+  if(!sug){ alert('لا اقتراح'); return; }
+  // In a real app: apply correction to active translation pipeline (update LLM prompts or TTS labels)
+  broadcast({ type:'translation', translated: sug, from: 'Agent' });
+  log('Applied agent correction to participants');
+};
+
+/* ---------------------------
+   Meeting analysis & summary
+   --------------------------- */
+const summaryBuffer = [];
+function addToSummaryLog(orig, translated){
+  summaryBuffer.push({ t: Date.now(), orig, translated });
+  if (summaryBuffer.length > 500) summaryBuffer.shift();
+  // quick UI summary (last 5)
+  const s = summaryBuffer.slice(-5).map(x=>`${new Date(x.t).toLocaleTimeString()} • ${x.orig} → ${x.translated}`).join('\\n');
+  document.getElementById('summaryBox').innerText = s;
+}
+
+document.getElementById('getActionItems').onclick = () => {
+  // simple heuristic: any sentence containing كلمات محددة -> action item (demo)
+  const items = summaryBuffer.flatMap(x=>{
+    const t = x.orig.toLowerCase();
+    const arr = [];
+    if (t.includes('ملاحظة') || t.includes('نقوم') || t.includes('يجب')) arr.push('Action: follow up on: ' + x.orig);
+    return arr;
+  });
+  const out = items.length ? items.join('\\n') : 'No clear action items detected (mock)';
+  document.getElementById('summaryBox').innerText = out;
+  broadcast({ type:'action', payload: out });
+  log('Action items extracted');
+};
+
+document.getElementById('exportSummary').onclick = () => {
+  // Export simple text file (mock PDF)
+  const content = 'Meeting summary:\\n\\n' + summaryBuffer.map(s=>`${new Date(s.t).toLocaleString()} - ${s.orig} -> ${s.translated}`).join('\\n');
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'nuba_summary.txt'; a.click();
+  URL.revokeObjectURL(url);
+  log('Summary exported');
+};
+
+/* ---------------------------
+   Utility: start camera button & resize overlay on window resize
+   --------------------------- */
+document.getElementById('startCam').onclick = startCamera;
+window.addEventListener('resize', ()=> setTimeout(resizeCanvas,300));
+
+// small helper: show live caption (also draws AR text)
+function showLiveCaption(text){
+  liveCaption.innerText = text;
+  drawARText(text);
+}
+
+/* ---------------------------
+   On-load: set defaults
+   --------------------------- */
+(function init(){
+  log('Nuba prototype ready — create invite then join in another tab to simulate multi-participant.');
+})();
+</script>
+</body>
+</html>
